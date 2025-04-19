@@ -13,64 +13,19 @@ class _InsertSoftSkillPageState extends State<InsertSoftSkillPage> {
   final _softSkillController = TextEditingController();
   List<Map<String, dynamic>> softSkillData = [];
   bool _isLoading = false;
+  bool _isFormVisible = false; // Controls form visibility
   int? _editingId;
-    List<Map<String, String>> mockSoftSkills = [
-    { 'softskill_name': 'Communication'},
-    { 'softskill_name': 'Teamwork'},
-    { 'softskill_name': 'Problem-Solving'},
-    { 'softskill_name': 'Adaptability'},
-    { 'softskill_name': 'Leadership'},
-    { 'softskill_name': 'Time Management'},
-    { 'softskill_name': 'Creativity'},
-    { 'softskill_name': 'Conflict Resolution'},
-    { 'softskill_name': 'Critical Thinking'},
-    { 'softskill_name': 'Work Ethic'},
-    { 'softskill_name': 'Empathy'},
-    { 'softskill_name': 'Patience'},
-    { 'softskill_name': 'Collaboration'},
-    { 'softskill_name': 'Decision-Making'},
-    { 'softskill_name': 'Conflict Management'},
-    { 'softskill_name': 'Resilience'},
-    { 'softskill_name': 'Open-Mindedness'},
-    { 'softskill_name': 'Interpersonal Skills'},
-    { 'softskill_name': 'Negotiation'},
-    { 'softskill_name': 'Time Efficiency'},
-    { 'softskill_name': 'Self-Discipline'},
-    { 'softskill_name': 'Stress Management'},
-    { 'softskill_name': 'Accountability'},
-    { 'softskill_name': 'Confidence'},
-    { 'softskill_name': 'Motivation'},
-    { 'softskill_name': 'Active Listening'},
-    { 'softskill_name': 'Delegation'},
-    { 'softskill_name': 'Public Speaking'},
-    { 'softskill_name': 'Creativity'},
-    { 'softskill_name': 'Innovation'},
-    { 'softskill_name': 'Goal-Oriented'},
-    { 'softskill_name': 'Mentoring'},
-    { 'softskill_name': 'Time Awareness'},
-    { 'softskill_name': 'Conflict Avoidance'},
-    { 'softskill_name': 'Self-Motivation'},
-    { 'softskill_name': 'Work-Life Balance'},
-    { 'softskill_name': 'Project Management'},
-    { 'softskill_name': 'Organizational Skills'},
-    { 'softskill_name': 'Attention to Detail'},
-    { 'softskill_name': 'Strategic Thinking'},
-    { 'softskill_name': 'Adaptability to Change'},
-    { 'softskill_name': 'Crisis Management'},
-    { 'softskill_name': 'Public Relations'},
-    { 'softskill_name': 'Visionary Thinking'},
-    { 'softskill_name': 'Customer Focus'},
-    { 'softskill_name': 'Mindfulness'},
-    { 'softskill_name': 'Continuous Learning'},
-    { 'softskill_name': 'Workplace Etiquette'},
-    { 'softskill_name': 'Team Building'},
-    { 'softskill_name': 'Stress Resilience'},
-  ];
 
   @override
   void initState() {
     super.initState();
     fetchSoftSkills();
+  }
+
+  @override
+  void dispose() {
+    _softSkillController.dispose();
+    super.dispose();
   }
 
   Future<void> fetchSoftSkills() async {
@@ -107,25 +62,56 @@ class _InsertSoftSkillPageState extends State<InsertSoftSkillPage> {
     });
 
     try {
+      final timestamp = DateTime.now().toIso8601String();
+
       if (_editingId == null) {
-        await supabase
-            .from('tbl_softskill')
-            .insert(mockSoftSkills);
+        // Insert new soft skill
+        await supabase.from('tbl_softskill').insert({
+          'softskill_name': _softSkillController.text,
+          'created_at': timestamp,
+        });
+
+        // Log activity
+        try {
+          await supabase.from('tbl_activity_log').insert({
+            'action': 'New Soft Skill Added: ${_softSkillController.text}',
+            'type': 'skill_create',
+            'created_at': timestamp,
+          });
+        } catch (e) {
+          print("Error logging activity: $e");
+        }
       } else {
-        await supabase
-            .from('tbl_softskill')
-            .update({'softskill_name': _softSkillController.text}).eq(
-                'id', _editingId!);
+        // Update existing soft skill
+        await supabase.from('tbl_softskill').update({
+          'softskill_name': _softSkillController.text,
+          'updated_at': timestamp,
+        }).eq('id', _editingId!);
+
+        // Log activity
+        try {
+          await supabase.from('tbl_activity_log').insert({
+            'action': 'Soft Skill Updated: ${_softSkillController.text}',
+            'type': 'skill_update',
+            'created_at': timestamp,
+          });
+        } catch (e) {
+          print("Error logging activity: $e");
+        }
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content: Text(_editingId == null
-                ? 'Soft Skill inserted successfully'
-                : 'Soft Skill updated successfully')),
+          content: Text(_editingId == null
+              ? 'Soft Skill added successfully'
+              : 'Soft Skill updated successfully'),
+        ),
       );
-      _softSkillController.clear();
-      _editingId = null;
+      setState(() {
+        _softSkillController.clear();
+        _editingId = null;
+        _isFormVisible = false; // Hide form after submission
+      });
       fetchSoftSkills();
     } catch (e) {
       print("Error inserting/updating soft skill: $e");
@@ -139,10 +125,47 @@ class _InsertSoftSkillPageState extends State<InsertSoftSkillPage> {
     }
   }
 
-  Future<void> deleteSoftSkill(int id) async {
+  Future<void> deleteSoftSkill(int id, String skillName) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm Delete'),
+        content: const Text(
+            'Are you sure you want to delete this soft skill? This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
     try {
       await supabase.from('tbl_softskill').delete().eq('id', id);
+
+      // Log activity
+      try {
+        await supabase.from('tbl_activity_log').insert({
+          'action': 'Soft Skill Deleted: $skillName',
+          'type': 'skill_delete',
+          'created_at': DateTime.now().toIso8601String(),
+        });
+      } catch (e) {
+        print("Error logging activity: $e");
+      }
+
       fetchSoftSkills();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Soft Skill deleted successfully')),
+      );
     } catch (e) {
       print("Error deleting soft skill: $e");
       ScaffoldMessenger.of(context).showSnackBar(
@@ -158,50 +181,178 @@ class _InsertSoftSkillPageState extends State<InsertSoftSkillPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Insert Soft Skill',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Manage Soft Skills',
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+              ),
+              ElevatedButton.icon(
+                icon: Icon(_isFormVisible ? Icons.close : Icons.add, size: 20),
+                label: Text(_isFormVisible ? 'Close' : 'Add Soft Skill'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                ),
+                onPressed: () {
+                  setState(() {
+                    _isFormVisible = !_isFormVisible;
+                    if (!_isFormVisible) {
+                      _softSkillController.clear();
+                      _editingId = null;
+                    }
+                  });
+                },
+              ),
+            ],
           ),
           const SizedBox(height: 16),
-          Form(
-            key: _formKey,
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    controller: _softSkillController,
-                    decoration: const InputDecoration(
-                      labelText: 'Soft Skill Name',
-                      border: OutlineInputBorder(),
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+            height: _isFormVisible ? null : 0,
+            child: _isFormVisible
+                ? Card(
+                    elevation: 4,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _editingId == null
+                                  ? 'Add New Soft Skill'
+                                  : 'Edit Soft Skill',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black87,
+                                  ),
+                            ),
+                            const SizedBox(height: 16),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextFormField(
+                                    controller: _softSkillController,
+                                    decoration: InputDecoration(
+                                      labelText: 'Soft Skill Name',
+                                      hintText: 'Enter soft skill name',
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                        borderSide: BorderSide(
+                                            color: Colors.grey.shade300),
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                        borderSide: BorderSide(
+                                            color: Colors.grey.shade300),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                        borderSide: const BorderSide(
+                                            color: Colors.blue),
+                                      ),
+                                    ),
+                                    validator: (value) {
+                                      if (value == null || value.isEmpty) {
+                                        return 'Please enter a soft skill name';
+                                      }
+                                      return null;
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                ElevatedButton(
+                                  onPressed: _isLoading ? null : submit,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.blue,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 24, vertical: 12),
+                                  ),
+                                  child: _isLoading
+                                      ? const SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white,
+                                          ),
+                                        )
+                                      : Text(_editingId == null
+                                          ? 'Add Soft Skill'
+                                          : 'Update Soft Skill'),
+                                ),
+                                if (_editingId != null) ...[
+                                  const SizedBox(width: 12),
+                                  TextButton(
+                                    onPressed: () {
+                                      setState(() {
+                                        _editingId = null;
+                                        _softSkillController.clear();
+                                        _isFormVisible = false;
+                                      });
+                                    },
+                                    child: const Text(
+                                      'Cancel Edit',
+                                      style: TextStyle(color: Colors.red),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Please enter a soft skill name';
-                      }
-                      return null;
-                    },
-                  ),
-                ),
-                const SizedBox(width: 16),
-                ElevatedButton(
-                  onPressed: _isLoading ? null : submit,
-                  child: _isLoading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Text(_editingId == null
-                          ? 'Insert Soft Skill'
-                          : 'Update Soft Skill'),
-                ),
-              ],
-            ),
+                  )
+                : const SizedBox.shrink(),
           ),
-          const SizedBox(height: 24),
-          const Text(
-            'Existing Soft Skills',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Existing Soft Skills',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+              ),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.refresh, size: 20),
+                label: const Text('Refresh'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                ),
+                onPressed: fetchSoftSkills,
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           Expanded(
@@ -209,48 +360,75 @@ class _InsertSoftSkillPageState extends State<InsertSoftSkillPage> {
                 ? const Center(child: CircularProgressIndicator())
                 : softSkillData.isEmpty
                     ? const Center(child: Text('No soft skills found'))
-                    : ListView.builder(
-                        itemCount: softSkillData.length,
-                        itemBuilder: (context, index) {
-                          final skill = softSkillData[index];
-                          return Card(
-                            child: ListTile(
-                              title: Text(skill['softskill_name']),
+                    : Card(
+                        elevation: 4,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        child: ListView.separated(
+                          itemCount: softSkillData.length,
+                          separatorBuilder: (context, index) =>
+                              const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            final skill = softSkillData[index];
+                            return ListTile(
+                              title: Text(
+                                skill['softskill_name'] ?? 'Unnamed',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w500),
+                              ),
+                              // subtitle: Column(
+                              //   crossAxisAlignment: CrossAxisAlignment.start,
+                              //   children: [
+                              //     if (skill['created_at'] != null)
+                              //       Text(
+                              //         'Created: ${DateTime.parse(skill['created_at']).toLocal().toString().split('.')[0]}',
+                              //         style: TextStyle(
+                              //             color: Colors.grey.shade600,
+                              //             fontSize: 12),
+                              //       ),
+                              //     if (skill['updated_at'] != null)
+                              //       Text(
+                              //         'Updated: ${DateTime.parse(skill['updated_at']).toLocal().toString().split('.')[0]}',
+                              //         style: TextStyle(
+                              //             color: Colors.grey.shade600,
+                              //             fontSize: 12),
+                              //       ),
+                              //   ],
+                              // ),
                               trailing: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   IconButton(
-                                    icon: const Icon(Icons.edit),
+                                    icon: const Icon(Icons.edit,
+                                        color: Colors.blue, size: 20),
                                     onPressed: () {
                                       setState(() {
                                         _softSkillController.text =
-                                            skill['softskill_name'];
+                                            skill['softskill_name'] ?? '';
                                         _editingId = skill['id'];
+                                        _isFormVisible = true;
                                       });
                                     },
+                                    tooltip: 'Edit',
                                   ),
                                   IconButton(
                                     icon: const Icon(Icons.delete,
-                                        color: Colors.red),
+                                        color: Colors.red, size: 20),
                                     onPressed: () async {
-                                      await deleteSoftSkill(skill['id']);
+                                      await deleteSoftSkill(
+                                          skill['id'], skill['softskill_name']);
                                     },
+                                    tooltip: 'Delete',
                                   ),
                                 ],
                               ),
-                            ),
-                          );
-                        },
+                            );
+                          },
+                        ),
                       ),
           ),
         ],
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _softSkillController.dispose();
-    super.dispose();
   }
 }
